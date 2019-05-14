@@ -13,6 +13,7 @@ import torch
 from skimage import io, transform
 from torch.utils.data import Dataset
 from torchvision import transforms, utils
+import torchvision.transforms.functional as F
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 import scipy.misc
@@ -134,7 +135,7 @@ def validate(segmenter, val_loader, num_classes=-1, outdir='test_result'):
         for i, sample in enumerate(val_loader):
             input = sample['image']
             target = sample['mask']
-            input = torch.autograd.Variable(torch.reshape(input, (1, 3, 800, 800))).float().cuda()
+            input = torch.autograd.Variable(torch.reshape(input, (1, 3, target.shape[1], target.shape[2]))).float().cuda()
             output = segmenter(input)
             if MODEL == 'lw_refine':
                 output = cv2.resize(output[0, :num_classes].data.cpu().numpy().transpose(1, 2, 0),
@@ -168,7 +169,6 @@ def main():
         segmenter = fs.get_fast_scnn().to(torch.device("cuda:0"))
     torch.cuda.empty_cache()
     composed_val = transforms.Compose([Normalise(*NORMALISE_PARAMS), ToTensor()])
-
     testset = Dataset(data_file=args.test_list,
                      data_dir=args.test_dir,
                      transform_trn=None,
