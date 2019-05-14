@@ -49,6 +49,15 @@ class ToTensor(object):
         image = image.transpose((2, 0, 1))
         return {'image': torch.from_numpy(image),
                 'mask': torch.from_numpy(mask)}
+    
+class Resize(object):
+
+    def __call__(self, sample):
+        image, mask = sample['image'], sample['mask']
+        image = Image.fromarray(image.astype('uint8'))
+        t = transforms.Compose([transforms.Resize((800, 800))])        
+        return {'image': np.array(t(image)),
+                'mask': mask}
 
 class Dataset(Dataset):
 
@@ -135,16 +144,20 @@ def validate(segmenter, val_loader, num_classes=-1, outdir='test_result'):
         for i, sample in enumerate(val_loader):
             input = sample['image']
             target = sample['mask']
-            input = torch.autograd.Variable(torch.reshape(input, (1, 3, target.shape[1], target.shape[2]))).float().cuda()
+            input = torch.autograd.Variable(torch.reshape(input, (1, 3, input.shape[2], input.shape[3]))).float().cuda()
+                
             output = segmenter(input)
+
             if MODEL == 'lw_refine':
                 output = cv2.resize(output[0, :num_classes].data.cpu().numpy().transpose(1, 2, 0),
                                     target.size()[1:][::-1],
                                     interpolation=cv2.INTER_CUBIC).argmax(axis=2).astype(np.uint8)
+                
             else:
-                output = torch.argmax(output[0], 1)
-                output = output.cpu().data.numpy()
-                output = output.squeeze(0)
+                output = output[0].squeeze(0)
+                output = cv2.resize(output.data.cpu().numpy().transpose(1, 2, 0),
+                                    target.size()[1:][::-1],
+                                    interpolation=cv2.INTER_CUBIC).argmax(axis=2).astype(np.uint8)
             
             out_img = Image.fromarray(output.astype('uint8'))
             out_img.putpalette(pallete)
@@ -168,7 +181,10 @@ def main():
     else:
         segmenter = fs.get_fast_scnn().to(torch.device("cuda:0"))
     torch.cuda.empty_cache()
-    composed_val = transforms.Compose([Normalise(*NORMALISE_PARAMS), ToTensor()])
+    if MODEL == 'fast_scnn':
+        composed_val = transforms.Compose([Resize(), Normalise(*NORMALISE_PARAMS), ToTensor()])
+    else:
+        composed_val = transforms.Compose([Normalise(*NORMALISE_PARAMS), ToTensor()])
     testset = Dataset(data_file=args.test_list,
                      data_dir=args.test_dir,
                      transform_trn=None,
